@@ -231,6 +231,17 @@ class FacturaExtractorGUI(QMainWindow):
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
         self.status_bar.showMessage("Listo")
+        
+        # Label permanente para mostrar estadísticas de tokens
+        self.tokens_label = QLabel("Tokens: 0")
+        self.tokens_label.setStyleSheet("color: #0066cc; font-weight: bold; padding: 0 10px;")
+        self.status_bar.addPermanentWidget(self.tokens_label)
+        
+        # Botón para ver estadísticas detalladas
+        self.btn_stats = QPushButton("Ver Estadísticas")
+        self.btn_stats.clicked.connect(self._mostrar_estadisticas)
+        self.btn_stats.setMaximumWidth(120)
+        self.status_bar.addPermanentWidget(self.btn_stats)
     
     def _seleccionar_archivos(self):
         """Abre el diálogo para seleccionar uno o varios archivos PDF"""
@@ -282,6 +293,10 @@ class FacturaExtractorGUI(QMainWindow):
             self.btn_limpiar.setEnabled(False)
             self.btn_generate.setEnabled(False)
             self.file_path_edit.clear()
+            # Resetear estadísticas de tokens
+            if self.extractor:
+                self.extractor.resetear_estadisticas_tokens()
+                self._actualizar_estadisticas_tokens()
             self.status_bar.showMessage("Lista limpiada")
     
     def _actualizar_lista_facturas(self):
@@ -316,6 +331,103 @@ class FacturaExtractorGUI(QMainWindow):
             self.factura_actual = self.facturas_cargadas[fila_seleccionada]
             self._mostrar_cabecera()
             self._mostrar_detalle()
+    
+    def _actualizar_estadisticas_tokens(self):
+        """Actualiza el label de tokens en la barra de estado"""
+        if self.extractor:
+            stats = self.extractor.obtener_estadisticas_tokens()
+            if stats['llamadas'] > 0:
+                self.tokens_label.setText(
+                    f"Tokens: {stats['tokens_total']:,} total "
+                    f"({stats['tokens_prompt']:,} entrada + {stats['tokens_completion']:,} salida) | "
+                    f"Llamadas: {stats['llamadas']}"
+                )
+            else:
+                self.tokens_label.setText("Tokens: 0")
+    
+    def _obtener_precios_modelo(self, modelo: str) -> tuple:
+        """Obtiene los precios por 1K tokens según el modelo"""
+        # Precios aproximados por 1M tokens (divididos por 1000 para obtener por 1K)
+        # Estos son precios estándar de Azure OpenAI, pueden variar según tu plan
+        precios = {
+            'gpt-4o-mini': (0.00015, 0.0006),  # $0.15 entrada, $0.60 salida por 1M tokens
+            'gpt-4o': (0.0025, 0.01),          # $2.50 entrada, $10.00 salida por 1M tokens
+            'gpt-4': (0.03, 0.06),             # $30 entrada, $60 salida por 1M tokens
+            'gpt-4-turbo': (0.01, 0.03),       # $10 entrada, $30 salida por 1M tokens
+            'gpt-35-turbo': (0.0005, 0.0015),  # $0.50 entrada, $1.50 salida por 1M tokens
+        }
+        
+        # Normalizar nombre del modelo (puede venir como "gpt-4o" o "gpt-4o-2024-08-06")
+        modelo_base = modelo.lower().split('-')[0:2]  # Tomar "gpt" y "4o" o "4"
+        if len(modelo_base) >= 2:
+            if modelo_base[1].startswith('4o'):
+                modelo_key = 'gpt-4o'
+            elif modelo_base[1].startswith('4'):
+                if 'turbo' in modelo.lower():
+                    modelo_key = 'gpt-4-turbo'
+                else:
+                    modelo_key = 'gpt-4'
+            elif modelo_base[1].startswith('35'):
+                modelo_key = 'gpt-35-turbo'
+            else:
+                modelo_key = 'gpt-4o-mini'  # Default
+        else:
+            modelo_key = 'gpt-4o-mini'  # Default
+        
+        # Obtener precios, usar gpt-4o-mini como fallback
+        return precios.get(modelo_key, precios['gpt-4o-mini'])
+    
+    def _mostrar_estadisticas(self):
+        """Muestra un diálogo con estadísticas detalladas de tokens"""
+        if not self.extractor:
+            QMessageBox.information(self, "Estadísticas", "No hay estadísticas disponibles.")
+            return
+        
+        stats = self.extractor.obtener_estadisticas_tokens()
+        
+        if stats['llamadas'] == 0:
+            QMessageBox.information(
+                self,
+                "Estadísticas de Tokens",
+                "No se han realizado llamadas a Azure OpenAI aún.\n\n"
+                "Las estadísticas se mostrarán después de procesar facturas."
+            )
+            return
+        
+        # Obtener el modelo configurado
+        modelo = self.extractor.modelo_azure if hasattr(self.extractor, 'modelo_azure') else 'gpt-4o-mini'
+        
+        # Obtener precios según el modelo
+        costo_entrada_por_1k, costo_salida_por_1k = self._obtener_precios_modelo(modelo)
+        
+        # Calcular costos
+        costo_entrada = (stats['tokens_prompt'] / 1000) * costo_entrada_por_1k
+        costo_salida = (stats['tokens_completion'] / 1000) * costo_salida_por_1k
+        costo_total = costo_entrada + costo_salida
+        
+        mensaje = f"""
+ESTADÍSTICAS DE USO DE AZURE OPENAI
+
+Modelo: {modelo}
+Llamadas realizadas: {stats['llamadas']}
+
+TOKENS:
+  • Entrada (Prompt): {stats['tokens_prompt']:,} tokens
+  • Salida (Completion): {stats['tokens_completion']:,} tokens
+  • Total: {stats['tokens_total']:,} tokens
+
+PROMEDIO POR LLAMADA:
+  • {stats['promedio_por_llamada']:.0f} tokens/llamada
+
+COSTO ESTIMADO ({modelo}):
+  • Entrada: ${costo_entrada:.4f}
+  • Salida: ${costo_salida:.4f}
+  • Total estimado: ${costo_total:.4f}
+
+Nota: Los costos son estimados y pueden variar según tu plan de Azure.
+        """
+        
+        QMessageBox.information(self, "Estadísticas de Tokens", mensaje.strip())
     
     def _limpiar_vista(self):
         """Limpia las vistas de cabecera y detalle"""
@@ -381,6 +493,7 @@ class FacturaExtractorGUI(QMainWindow):
                     mensaje += f"\n... y {len(facturas_fallidas) - 5} más"
             
             self.status_bar.showMessage(f"Procesadas {facturas_exitosas} factura(s)")
+            self._actualizar_estadisticas_tokens()
             
             if facturas_fallidas:
                 QMessageBox.warning(self, "Proceso completado con errores", mensaje)

@@ -60,6 +60,12 @@ class PDFExtractor:
         self.azure_api_version = azure_api_version
         self.azure_client = None
         
+        # Estadísticas de uso de tokens
+        self._tokens_prompt = 0  # Tokens de entrada acumulados
+        self._tokens_completion = 0  # Tokens de salida acumulados
+        self._tokens_total = 0  # Total de tokens acumulados
+        self._llamadas_azure = 0  # Número de llamadas a Azure OpenAI
+        
         if self.usar_azure_openai:
             if not azure_endpoint or not azure_api_key:
                 print("Advertencia: Azure OpenAI requiere endpoint y API key configurados")
@@ -299,6 +305,14 @@ Texto de la factura:
                 respuesta = response.choices[0].message.content.strip()
                 datos = json.loads(respuesta)
                 
+                # Capturar uso de tokens
+                if hasattr(response, 'usage') and response.usage:
+                    self._tokens_prompt += response.usage.prompt_tokens
+                    self._tokens_completion += response.usage.completion_tokens
+                    self._tokens_total += response.usage.total_tokens
+                    self._llamadas_azure += 1
+                    print(f"Tokens usados - Prompt: {response.usage.prompt_tokens}, Completion: {response.usage.completion_tokens}, Total: {response.usage.total_tokens}")
+                
             except Exception as e_parse:
                 # Si json_schema falla, usar json_object
                 print(f"Advertencia: json_schema falló, usando json_object: {e_parse}")
@@ -322,6 +336,14 @@ Texto de la factura:
                     
                     respuesta = response.choices[0].message.content.strip()
                     datos = json.loads(respuesta)
+                    
+                    # Capturar uso de tokens
+                    if hasattr(response, 'usage') and response.usage:
+                        self._tokens_prompt += response.usage.prompt_tokens
+                        self._tokens_completion += response.usage.completion_tokens
+                        self._tokens_total += response.usage.total_tokens
+                        self._llamadas_azure += 1
+                        print(f"Tokens usados - Prompt: {response.usage.prompt_tokens}, Completion: {response.usage.completion_tokens}, Total: {response.usage.total_tokens}")
                 except Exception as e2:
                     print(f"Advertencia: Error al formatear con Azure OpenAI: {e2}")
                     import traceback
@@ -440,6 +462,23 @@ Texto de la factura:
     def obtener_texto_extraido(self) -> str:
         """Retorna el texto crudo extraído por OCR"""
         return self.texto_extraido
+    
+    def obtener_estadisticas_tokens(self) -> dict:
+        """Retorna estadísticas de uso de tokens de Azure OpenAI"""
+        return {
+            'tokens_prompt': self._tokens_prompt,
+            'tokens_completion': self._tokens_completion,
+            'tokens_total': self._tokens_total,
+            'llamadas': self._llamadas_azure,
+            'promedio_por_llamada': self._tokens_total / self._llamadas_azure if self._llamadas_azure > 0 else 0
+        }
+    
+    def resetear_estadisticas_tokens(self):
+        """Reinicia las estadísticas de tokens"""
+        self._tokens_prompt = 0
+        self._tokens_completion = 0
+        self._tokens_total = 0
+        self._llamadas_azure = 0
     
     def _preprocesar_imagen(self, imagen):
         """Preprocesa la imagen para mejorar la calidad del OCR"""

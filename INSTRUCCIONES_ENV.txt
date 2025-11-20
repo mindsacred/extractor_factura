@@ -1,0 +1,30 @@
+INSTRUCCIONES PARA CREAR EL ARCHIVO .env
+==========================================
+
+1. Copia el contenido del archivo .env.example
+
+2. Crea un nuevo archivo de texto llamado exactamente: .env
+   (sin extensión .txt)
+
+3. Pega el contenido copiado y edita los valores:
+
+   - RUTA_TESSERACT: Deja vacío si Tesseract está en el PATH, 
+     o pon la ruta completa como:
+     C:\Program Files\Tesseract-OCR\tesseract.exe
+
+   - AZURE_ENDPOINT: Tu endpoint de Azure OpenAI
+   - AZURE_API_KEY: Tu API key de Azure OpenAI
+
+4. Guarda el archivo en la raíz del proyecto (misma carpeta que main.py)
+
+NOTA IMPORTANTE:
+- En Windows, si no puedes crear un archivo sin extensión:
+  a) Crea el archivo como "env.txt"
+  b) Luego renómbralo a ".env" (sin la extensión .txt)
+  
+- O usa el Bloc de notas:
+  1. Abre Bloc de notas
+  2. Pega el contenido
+  3. Guarda como "Todos los archivos (*.*)"
+  4. Nombre: .env (con el punto al inicio)
+
